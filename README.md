@@ -16,6 +16,10 @@ Bộ 2 skill Node (zero-dependency) chạy được cả **máy local** lẫn **
 | 3 | [Setup GitHub Actions](huong-dan/SETUP-GITHUB.md) | Điền Secrets/Variables để chạy cloud |
 | 4 | [Mẫu gọi HTTP từ Lark](huong-dan/HTTP-Lark-templates.md) | Nối vào automation Lark Base |
 | 5 | [Quy trình đăng video từ Lark](huong-dan/QUY-TRINH-dang-youtube-tu-lark.md) | Cách vận hành bảng đăng video |
+| 🍴 | [Hướng dẫn khi FORK repo](huong-dan/HUONG-DAN-FORK.md) | Người khác fork về dùng cho kênh/base riêng |
+
+## 🍴 Muốn dùng cho kênh/khách của bạn?
+Bấm **Fork** ở góc trên repo này rồi làm theo [HUONG-DAN-FORK.md](huong-dan/HUONG-DAN-FORK.md) — điền token của riêng bạn (fork không sao chép Secrets của chủ gốc).
 
 ## Chạy nhanh (đã cài xong)
 ```powershell
