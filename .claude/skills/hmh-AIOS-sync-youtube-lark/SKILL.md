@@ -81,6 +81,9 @@ Script in tiến độ (`... i/total tạo X cập nhật Y`) và tổng kết. 
 - **Chậm do ảnh**: full ~1.3k video = ~1.3k lần tải+upload ảnh → mất nhiều thời gian. Có thể chạy `--limit` nhiều đợt.
 - **Quota YouTube**: playlistItems + videos.list phân trang 50/lần; theo dõi để không vượt 10.000 đơn vị/ngày.
 - **Domain**: kênh quốc tế dùng `open.larksuite.com`; tenant Trung Quốc dùng `open.feishu.cn`.
+- **Base bật QUYỀN NÂNG CAO**: upload thumbnail vào cột attachment cần thêm `extra={"bitablePerm":{"tableId":…,"rev":…}}`.
+  Script thử cách thường trước, hỏng thì tự thử lại kèm `extra` (rev lấy từ `GET /bitable/v1/apps/{app_token}`) và in ra
+  khi phải dùng. Vẫn hỏng → cấp quyền cho bot trong Base > *Quyền nâng cao*.
 - **Lỗi thường gặp**: `91403 Forbidden` = app thiếu quyền sửa Base (xem Tiền điều kiện #3); `1061004 forbidden` =
   thiếu scope `drive:drive` hoặc quyền sửa Base; token hết hạn được tự refresh.
 

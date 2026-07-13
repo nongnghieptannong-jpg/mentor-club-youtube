@@ -20,6 +20,8 @@ Chạy **theo yêu cầu** (chỉ khi được gọi). Song hành với `dang-re
 - **YouTube Data API v3 – `videos.insert`** (resumable upload). Upload BẮT BUỘC **OAuth 2.0** của chủ kênh
   (scope `youtube.upload`) — **API key KHÔNG upload được**. https://developers.google.com/youtube/v3/docs/videos/insert
 - **Lark Base Open API**: đọc record, tải attachment (`drive/v1/medias/{token}/download`), cập nhật record.
+  Base **bật quyền nâng cao** thì lệnh tải phải kèm query `extra` mang `bitablePerm` để rà quyền —
+  script tự lo (xem *Lưu ý*). https://open.larksuite.com/document/server-docs/docs/drive-v1/media/download
 
 ## Khi nào dùng / KHÔNG dùng
 - **Dùng**: có sẵn file video trong Lark, muốn đẩy lên YouTube (public/unlisted/private hoặc hẹn giờ) và theo dõi trạng thái.
@@ -65,6 +67,11 @@ node ".claude/skills/hmh-AIOS-dang-video-youtube/scripts/post-video-youtube.mjs 
 Sau mỗi video: bảng cập nhật `Trạng thái`, `Video ID`, `Link video`, `Ngày đăng` (lỗi → `Trạng thái`=Lỗi + `Ghi chú lỗi`).
 
 ## Lưu ý (gotcha)
+- **Base bật QUYỀN NÂNG CAO** (Advanced permission): tải file bằng URL trần sẽ bị chặn (`1061045` / `91403` /
+  "no permission"). Script tự thử lần lượt: URL trần → `extra={"bitablePerm":{"tableId":…,"attachments":{fld:{rec:[token]}}}}`
+  → `extra={"bitablePerm":{"tableId":…,"rev":…}}` (rev lấy từ `GET /bitable/v1/apps/{app_token}`) → `url` Lark trả sẵn
+  trong record; cách nào ra file thật thì dùng, và in ra cách đã dùng. Vẫn hỏng cả 4 → **app (bot) chưa được cấp quyền
+  trong Base**: mở Base > *Quyền nâng cao* > thêm bot vào vai trò có quyền xem/tải bảng đó.
 - **Chống trùng**: chỉ đăng dòng `Trạng thái = Chờ đăng` có file. Đăng xong tự chuyển `Đã đăng` → chạy lại không đăng lại.
 - **File lớn**: script tải cả file về `%TEMP%` rồi PUT một lần → cần đủ RAM/đĩa cho video lớn. Video rất lớn nên tách nhỏ số lượng.
 - **Hẹn giờ** chỉ hiệu lực khi `publishAt` ở tương lai; YouTube giữ video *private* tới giờ đó rồi tự công khai.

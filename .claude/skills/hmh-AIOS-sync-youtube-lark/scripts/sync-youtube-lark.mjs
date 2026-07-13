@@ -100,31 +100,56 @@ async function larkApi(method, apiPath, body) {
   throw new Error(`Lark ${apiPath}: hết lượt thử.`);
 }
 
-/** Upload 1 buffer ảnh lên Lark drive (bitable_image) -> file_token */
-async function uploadMedia(buf, fileName) {
-  const token = await larkToken();
-  const form = new FormData();
-  form.append("file_name", fileName);
-  form.append("parent_type", "bitable_image");
-  form.append("parent_node", CFG.appToken);
-  form.append("size", String(buf.length));
-  form.append("file", new Blob([buf]), fileName);
-  const r = await fetch(`${CFG.larkDomain}/open-apis/drive/v1/medias/upload_all`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
-  const j = await r.json();
-  if (j.code !== 0) throw new Error(`Upload media lỗi: ${j.code} ${j.msg}`);
-  return j.data.file_token;
+/** Revision của Base — cần cho "extra" khi Base bật quyền nâng cao. */
+let APP_REV;
+async function appRevision() {
+  if (APP_REV !== undefined) return APP_REV;
+  try {
+    const d = await larkApi("GET", `/open-apis/bitable/v1/apps/${CFG.appToken}`);
+    APP_REV = d.app?.revision ?? null;
+  } catch { APP_REV = null; }
+  return APP_REV;
+}
+
+/** Upload 1 buffer ảnh lên Lark drive (bitable_image) -> file_token.
+ *  Base BẬT QUYỀN NÂNG CAO thì phải kèm "extra" (bitablePerm) mới được ghi media,
+ *  nên thử cách thường trước, hỏng thì thử lại kèm extra. */
+async function uploadMedia(buf, fileName, tableId) {
+  const attempts = [null];
+  const rev = await appRevision();
+  if (tableId && rev != null) attempts.push(JSON.stringify({ bitablePerm: { tableId, rev } }));
+
+  let last = "";
+  for (const extra of attempts) {
+    const token = await larkToken();
+    const form = new FormData();
+    form.append("file_name", fileName);
+    form.append("parent_type", "bitable_image");
+    form.append("parent_node", CFG.appToken);
+    form.append("size", String(buf.length));
+    if (extra) form.append("extra", extra);
+    form.append("file", new Blob([buf]), fileName);
+    const r = await fetch(`${CFG.larkDomain}/open-apis/drive/v1/medias/upload_all`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const j = await r.json();
+    if (j.code === 0) {
+      if (extra) log(`  (upload ảnh qua extra=bitablePerm — Base đang bật quyền nâng cao)`);
+      return j.data.file_token;
+    }
+    last = `${j.code} ${j.msg}`;
+  }
+  throw new Error(`Upload media lỗi: ${last}`);
 }
 
 /** Tải ảnh từ URL rồi upload lên Lark drive -> file_token */
-async function uploadThumb(imgUrl, fileName) {
+async function uploadThumb(imgUrl, fileName, tableId) {
   const ir = await fetch(imgUrl);
   if (!ir.ok) throw new Error(`Tải thumbnail lỗi ${ir.status}`);
   const buf = Buffer.from(await ir.arrayBuffer());
-  return uploadMedia(buf, fileName);
+  return uploadMedia(buf, fileName, tableId);
 }
 
 async function listAllRecords(tableId) {
@@ -242,7 +267,7 @@ async function syncChannel(ch) {
   const needThumb = args.refreshThumbs || !found || !(found.fields["thumbnails"]?.length);
   if (needThumb) {
     try {
-      const ft = await uploadThumb(bestThumb(ch.snippet.thumbnails), `${ch.id}.jpg`);
+      const ft = await uploadThumb(bestThumb(ch.snippet.thumbnails), `${ch.id}.jpg`, CFG.tableChannel);
       fields["thumbnails"] = [{ file_token: ft }];
     } catch (e) { log("  ! thumbnail kênh lỗi:", e.message); thumbError = true; }
   }
@@ -291,7 +316,7 @@ async function syncVideos(ch) {
     const hasThumb = cur?.fields["thumbnails"]?.length;
     if (args.refreshThumbs || !hasThumb) {
       try {
-        const ft = await uploadThumb(bestThumb(v.snippet.thumbnails), `${v.id}.jpg`);
+        const ft = await uploadThumb(bestThumb(v.snippet.thumbnails), `${v.id}.jpg`, CFG.tableVideo);
         fields["thumbnails"] = [{ file_token: ft }];
       } catch (e) { log(`  ! thumb ${v.id} lỗi: ${e.message}`); thumbErrors++; }
     }

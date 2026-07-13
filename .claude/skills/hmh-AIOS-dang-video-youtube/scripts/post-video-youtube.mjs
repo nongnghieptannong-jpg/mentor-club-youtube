@@ -70,17 +70,85 @@ async function listPending() {
 }
 const updateRow = (rid, fields) => larkApi("PUT", `${T()}/records/${rid}`, { fields });
 
-async function downloadAttachment(fileToken, destPath) {
+// ---------- Tải attachment (hỗ trợ Base BẬT QUYỀN NÂNG CAO) ----------
+// Base bật quyền nâng cao thì /drive/v1/medias/{token}/download bị chặn nếu thiếu query "extra"
+// mang thông tin bitablePerm. Ta thử lần lượt nhiều cách, cách nào ra file thật thì dùng.
+let FIELD_IDS = null;
+async function fieldIds() {
+  if (FIELD_IDS) return FIELD_IDS;
+  const d = await larkApi("GET", `${T()}/fields?page_size=200`);
+  FIELD_IDS = {};
+  for (const f of d.items || []) FIELD_IDS[f.field_name] = f.field_id;
+  return FIELD_IDS;
+}
+let APP_REV;
+async function appRevision() {
+  if (APP_REV !== undefined) return APP_REV;
+  try {
+    const d = await larkApi("GET", `/open-apis/bitable/v1/apps/${CFG.appToken}`);
+    APP_REV = d.app?.revision ?? null;
+  } catch { APP_REV = null; }
+  return APP_REV;
+}
+const withExtra = (fileToken, extra) =>
+  `${CFG.larkDomain}/open-apis/drive/v1/medias/${fileToken}/download?extra=${encodeURIComponent(JSON.stringify(extra))}`;
+
+/** Các URL tải sẽ thử theo thứ tự: base thường trước, rồi các biến thể "extra" của quyền nâng cao. */
+async function downloadUrls(att, recordId, fieldName) {
+  const plain = `${CFG.larkDomain}/open-apis/drive/v1/medias/${att.file_token}/download`;
+  const urls = [{ label: "không extra", url: plain }];
+
+  // extra dạng attachments: {"bitablePerm":{"tableId":"tbl…","attachments":{"fld…":{"rec…":["box…"]}}}}
+  try {
+    const fld = (await fieldIds())[fieldName];
+    if (fld) urls.push({
+      label: "extra=bitablePerm.attachments",
+      url: withExtra(att.file_token, {
+        bitablePerm: { tableId: CFG.tablePost, attachments: { [fld]: { [recordId]: [att.file_token] } } },
+      }),
+    });
+  } catch { /* không lấy được field id thì bỏ qua cách này */ }
+
+  // extra dạng rev: {"bitablePerm":{"tableId":"tbl…","rev":32}}
+  const rev = await appRevision();
+  if (rev != null) urls.push({
+    label: "extra=bitablePerm.rev",
+    url: withExtra(att.file_token, { bitablePerm: { tableId: CFG.tablePost, rev } }),
+  });
+
+  // URL Lark trả sẵn trong record (thường đã kèm sẵn extra hợp lệ)
+  for (const [label, u] of [["att.url", att.url], ["att.tmp_url", att.tmp_url]]) {
+    if (u && !urls.some((x) => x.url === u)) urls.push({ label, url: u });
+  }
+  return urls;
+}
+
+async function downloadAttachment(att, recordId, fieldName, destPath) {
   const token = await larkToken();
-  const r = await fetch(`${CFG.larkDomain}/open-apis/drive/v1/medias/${fileToken}/download`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) throw new Error(`Tải video từ Lark lỗi ${r.status}`);
-  await new Promise((res, rej) => {
-    const ws = fs.createWriteStream(destPath);
-    Readable.fromWeb(r.body).pipe(ws); ws.on("finish", res); ws.on("error", rej);
-  });
-  return fs.statSync(destPath).size;
+  const errs = [];
+  for (const { label, url } of await downloadUrls(att, recordId, fieldName)) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    // Lỗi quyền được Lark trả về dạng JSON (dù status có thể là 200), file thật là binary.
+    const ct = r.headers.get("content-type") || "";
+    if (!r.ok || ct.includes("application/json")) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); msg = `${j.code} ${j.msg}`; } catch { /* body không phải JSON */ }
+      errs.push(`${label}: ${msg}`);
+      continue;
+    }
+    await new Promise((res, rej) => {
+      const ws = fs.createWriteStream(destPath);
+      Readable.fromWeb(r.body).pipe(ws); ws.on("finish", res); ws.on("error", rej);
+    });
+    const size = fs.statSync(destPath).size;
+    if (size === 0) { errs.push(`${label}: file 0 byte`); continue; }
+    if (label !== "không extra") console.log(`  (tải qua ${label} — Base đang bật quyền nâng cao)`);
+    return size;
+  }
+  throw new Error(
+    `Tải video từ Lark thất bại. Đã thử ${errs.length} cách: ${errs.join(" | ")}. ` +
+    `Nếu Base bật QUYỀN NÂNG CAO, hãy vào Base > Quyền nâng cao và cấp quyền xem/tải cho app (bot) đang dùng.`
+  );
 }
 
 // ---------- YouTube OAuth + upload ----------
@@ -160,7 +228,7 @@ async function main() {
     const tmp = path.join(os.tmpdir(), `yt-${row.record_id}-${att.name}`.replace(/[^\w.\-]/g, "_"));
     try {
       await updateRow(row.record_id, { "Trạng thái": "Đang đăng" });
-      const size = await downloadAttachment(att.file_token, tmp);
+      const size = await downloadAttachment(att, row.record_id, "Video", tmp);
 
       const desc = (f["Mô tả"]?.text ?? f["Mô tả"] ?? "").toString();
       const tagsRaw = (f["Tags"]?.text ?? f["Tags"] ?? "").toString();
