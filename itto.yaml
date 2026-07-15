@@ -1,0 +1,71 @@
+# ============================================================================
+# itto.yaml — HỢP ĐỒNG ITTO của gói mentor-club-youtube (YouTube ⇄ Lark Base)
+# Gói này BỌC 2 skill (mảnh ①) ngay trong repo → workflow chạy script theo path skill.
+# ZERO-DEPENDENCY: soát bằng `node check-itto.mjs` (không cần npm install).
+# ============================================================================
+
+package: mentor-club-youtube
+version: 1.0.0
+skills:
+  - hmh-AIOS-sync-youtube-lark     # kéo kênh (16.1) + video (16.2)
+  - hmh-AIOS-dang-video-youtube    # đăng video (16.3 → YouTube, OAuth)
+
+# ── I — INPUT: chuẩn bị TRƯỚC khi chạy ──
+input:
+  base_mau:
+    template_url: "https://<link-nhan-ban-Base-YouTube>"   # <đổi khi bàn giao>
+    setup:  node .claude/skills/hmh-AIOS-sync-youtube-lark/scripts/setup-tables.mjs   # 16.1 + 16.2
+    setup2: node .claude/skills/hmh-AIOS-dang-video-youtube/scripts/setup-table.mjs   # 16.3
+    tables:
+      - "16.1 Kênh   → Variable TABLE_CHANNEL"
+      - "16.2 Video  → Variable TABLE_VIDEO"
+      - "16.3 Đăng video → Variable TABLE_POST"
+  secrets:                         # GitHub Secrets
+    - YOUTUBE_API_KEY              # sync (Data API v3 key)
+    - LARK_APP_SECRET
+    - YT_OAUTH_CLIENT_SECRET       # đăng (OAuth desktop client)
+    - YT_OAUTH_REFRESH_TOKEN       # đăng (lấy 1 lần bằng get-oauth-token.mjs)
+    - LARK_NOTIFY_WEBHOOK          # (tuỳ chọn) card báo cáo nhóm Lark
+  variables:                       # GitHub Variables (client_payload ghi đè)
+    - LARK_APP_ID
+    - LARK_DOMAIN
+    - LARK_BASE_ID
+    - TABLE_CHANNEL
+    - TABLE_VIDEO
+    - TABLE_POST
+    - YT_OAUTH_CLIENT_ID
+    - YT_CATEGORY_ID
+    - YT_PRIVACY
+    - YT_CHANNEL
+  phieu_input: 00-PHIEU-INPUT.md
+  preflight: node check-itto.mjs   # (repo này không có check-setup trong skill)
+
+# ── T — TECH ──
+tech:
+  - Lark Base
+  - YouTube Data API v3 — sync (API key)
+  - YouTube Data API v3 — đăng (OAuth 2.0, upload resumable)
+  - GitHub Actions
+  - "zero-dependency (Node >= 18)"
+
+# ── T — TOOL ──
+tool:
+  setup: node .claude/skills/hmh-AIOS-sync-youtube-lark/scripts/setup-tables.mjs
+  auth:  node .claude/skills/hmh-AIOS-dang-video-youtube/scripts/get-oauth-token.mjs
+  triggers:
+    - event_type: sync-youtube
+      script: node .claude/skills/hmh-AIOS-sync-youtube-lark/scripts/sync-youtube-lark.mjs
+      desc: "Kéo kênh 16.1 + video 16.2 (channel qua client_payload / Variable YT_CHANNEL)"
+    - event_type: dang-video-youtube
+      script: node .claude/skills/hmh-AIOS-dang-video-youtube/scripts/post-video-youtube.mjs
+      desc: "Đăng video 16.3 lên YouTube theo record_id (nút) hoặc quét dòng 'Chờ đăng'"
+
+# ── O — OUTPUT ──
+output:
+  writes_back:
+    - "16.1 upsert kênh theo link (subscriber/view/videoCount/…)"
+    - "16.2 upsert video theo video id (view/like/comment/tag/thumbnail)"
+    - "16.3 Video ID + link + trạng thái; bỏ tick sau khi đăng"
+  proof: "tab Actions xanh + 16.1/16.2 có dữ liệu + 16.3 có Video ID/link"
+  note: "Đăng cần YT_OAUTH_REFRESH_TOKEN — lấy bằng get-oauth-token.mjs (chạy 1 lần)."
+  multi_tenant: "1 repo phục vụ nhiều kênh/base: truyền channel/base_id/table_* qua client_payload."
