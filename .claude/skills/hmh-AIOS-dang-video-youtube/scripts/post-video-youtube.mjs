@@ -93,6 +93,24 @@ async function appRevision() {
 const withExtra = (fileToken, extra) =>
   `${CFG.larkDomain}/open-apis/drive/v1/medias/${fileToken}/download?extra=${encodeURIComponent(JSON.stringify(extra))}`;
 
+/** Lấy URL tải TẠM qua batch_get_tmp_download_url + extra (bitablePerm).
+ *  Đây là cách DUY NHẤT hoạt động khi Base bật QUYỀN NÂNG CAO: endpoint /medias/{token}/download kèm
+ *  query "extra" (JSON) bị Akamai/WAF chặn (HTTP 403 text/html), còn endpoint này trả JSON nên qua được,
+ *  và trả về URL đã ký sẵn (pre-authed) để tải trực tiếp. Không truyền extra thì mảng trả về RỖNG. */
+async function tmpDownloadUrl(att, recordId, fieldName) {
+  const extra = { bitablePerm: { tableId: CFG.tablePost } };
+  const rev = await appRevision();
+  if (rev != null) extra.bitablePerm.rev = rev;
+  try {
+    const fld = (await fieldIds())[fieldName];
+    if (fld) extra.bitablePerm.attachments = { [fld]: { [recordId]: [att.file_token] } };
+  } catch { /* không lấy được field id → dùng extra chỉ có rev */ }
+  const qs = `file_tokens=${att.file_token}&extra=${encodeURIComponent(JSON.stringify(extra))}`;
+  const d = await larkApi("GET", `/open-apis/drive/v1/medias/batch_get_tmp_download_url?${qs}`);
+  const item = (d.tmp_download_urls || []).find((x) => x.file_token === att.file_token);
+  return item?.tmp_download_url || null;
+}
+
 /** Các URL tải sẽ thử theo thứ tự: base thường trước, rồi các biến thể "extra" của quyền nâng cao. */
 async function downloadUrls(att, recordId, fieldName) {
   const plain = `${CFG.larkDomain}/open-apis/drive/v1/medias/${att.file_token}/download`;
@@ -126,6 +144,25 @@ async function downloadUrls(att, recordId, fieldName) {
 async function downloadAttachment(att, recordId, fieldName, destPath) {
   const token = await larkToken();
   const errs = [];
+
+  // CÁCH ƯU TIÊN: URL tải tạm (pre-authed) qua batch_get_tmp_download_url + extra.
+  // Hoạt động cả khi Base bật QUYỀN NÂNG CAO; URL đã ký sẵn nên KHÔNG kèm Authorization.
+  try {
+    const tmpUrl = await tmpDownloadUrl(att, recordId, fieldName);
+    if (tmpUrl) {
+      const r = await fetch(tmpUrl);
+      if (r.ok) {
+        await new Promise((res, rej) => {
+          const ws = fs.createWriteStream(destPath);
+          Readable.fromWeb(r.body).pipe(ws); ws.on("finish", res); ws.on("error", rej);
+        });
+        const size = fs.statSync(destPath).size;
+        if (size > 0) { console.log("  (tải qua batch_get_tmp_download_url + extra — Base bật quyền nâng cao)"); return size; }
+        errs.push("tmp_download_url: file 0 byte");
+      } else errs.push(`tmp_download_url: HTTP ${r.status}`);
+    } else errs.push("tmp_download_url: rỗng (thiếu quyền/extra)");
+  } catch (e) { errs.push(`tmp_download_url: ${e.message}`); }
+
   for (const { label, url } of await downloadUrls(att, recordId, fieldName)) {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     // Lỗi quyền được Lark trả về dạng JSON (dù status có thể là 200), file thật là binary.
