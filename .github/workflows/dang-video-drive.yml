@@ -1,0 +1,47 @@
+# Đăng video THẲNG từ Google Drive lên YouTube (không qua Lark attachment).
+# Đọc bảng 16.3: dòng "Chờ đăng" + có "Drive ID" + "Lịch đăng" tới hạn → đăng COUNT video (mặc định 1/ngày).
+# Cò: cron hằng ngày 01:00 UTC (08:00 giờ VN) + chạy tay (workflow_dispatch, chọn số lượng).
+name: dang-video-drive
+
+on:
+  schedule:
+    - cron: "0 1 * * *"        # 08:00 giờ Việt Nam mỗi ngày
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Số video đăng lượt này (mặc định 1)"
+        required: false
+        default: "1"
+      force:
+        description: "1 = bỏ qua điều kiện Lịch đăng (đăng ngay video kế tiếp, để chạy thử)"
+        required: false
+        default: "0"
+  repository_dispatch:
+    types: [dang-video-drive]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Đăng video Drive -> YouTube
+        env:
+          # ---- Bí mật -> GitHub Secrets ----
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          YT_OAUTH_CLIENT_SECRET: ${{ secrets.YT_OAUTH_CLIENT_SECRET }}
+          YT_OAUTH_REFRESH_TOKEN: ${{ secrets.YT_OAUTH_REFRESH_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          # ---- Không bí mật -> Variables ----
+          LARK_APP_ID: ${{ vars.LARK_APP_ID }}
+          LARK_DOMAIN: ${{ vars.LARK_DOMAIN }}
+          LARK_BASE_ID: ${{ vars.LARK_BASE_ID }}
+          YT_OAUTH_CLIENT_ID: ${{ vars.YT_OAUTH_CLIENT_ID }}
+          YT_CATEGORY_ID: ${{ vars.YT_CATEGORY_ID }}
+          COUNT: ${{ github.event.inputs.count || github.event.client_payload.count || '1' }}
+          FORCE: ${{ github.event.inputs.force || github.event.client_payload.force || '0' }}
+        run: node ".claude/skills/hmh-AIOS-dang-video-youtube/scripts/post-drive-to-youtube.mjs"
