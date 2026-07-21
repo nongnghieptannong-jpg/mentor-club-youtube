@@ -104,7 +104,9 @@ for (const row of batch) {
     // 2) resumable upload YouTube
     const ytok = await oauthToken("YT_OAUTH");
     const status = { privacyStatus: "public", selfDeclaredMadeForKids: false };
-    if (schedMs && schedMs > now) { status.privacyStatus = "private"; status.publishAt = new Date(schedMs).toISOString(); }
+    // Đánh giá LẠI ngay trước khi tạo video: chỉ hẹn giờ nếu mốc còn cách >2 phút (tránh publishAt quá khứ
+    // do tải/upload lâu -> YouTube từ chối). Nếu đã qua giờ hẹn thì công khai luôn.
+    if (schedMs && schedMs > Date.now() + 120000) { status.privacyStatus = "private"; status.publishAt = new Date(schedMs).toISOString(); }
     const snippet = { title: title.slice(0, 100), description: val(f["Mô tả"]), tags: val(f["Tags"]).split(",").map((s) => s.trim()).filter(Boolean), categoryId: CATEGORY };
     log(`  ↑ upload YouTube (${status.publishAt ? "hẹn " + status.publishAt : "công khai ngay"})...`);
     const init = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
