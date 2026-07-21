@@ -73,7 +73,8 @@ const all = [];
 const now = Date.now();
 const due = all
   .map((r) => ({ id: r.record_id, f: r.fields }))
-  .filter((r) => String(val(r.f["Trạng thái"])) === "Chờ đăng" && val(r.f["Drive ID"]) && (FORCE || !r.f["Lịch đăng"] || Number(r.f["Lịch đăng"]) <= now + 16 * 60 * 60e3))
+  // CHỈ đăng "Video dài" (mỗi ngày 1 video dài). Shorts giữ làm nguyên liệu ghép compilation, không tự đăng.
+  .filter((r) => String(val(r.f["Trạng thái"])) === "Chờ đăng" && val(r.f["Drive ID"]) && String(val(r.f["Loại"])) === "Video dài" && (FORCE || !r.f["Lịch đăng"] || Number(r.f["Lịch đăng"]) <= now + 16 * 60 * 60e3))
   .sort((a, b) => (Number(a.f["Lịch đăng"] || 0) - Number(b.f["Lịch đăng"] || 0)) || (parseInt(val(a.f["STT"]) || "0") - parseInt(val(b.f["STT"]) || "0")));
 
 log(`Có ${due.length} video tới hạn (Chờ đăng + Drive ID + Lịch đăng ≤ giờ). Sẽ đăng ${Math.min(COUNT, due.length)}.`);
