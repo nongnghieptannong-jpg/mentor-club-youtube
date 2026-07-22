@@ -1,0 +1,39 @@
+# Dựng "video dài" bằng cách ghép các Shorts theo nhóm (film-assets/groups.json) rồi upload Drive + thêm record 16.3.
+# Chạy tay khi cần bổ sung video dài vào kho. KHÔNG đăng YouTube (việc đăng do cron dang-video-drive lo).
+name: make-films
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Chỉ dựng phim nào (vd A hoặc A,B). Trống = cả 4."
+        required: false
+        default: ""
+      film_start:
+        description: "Ngày bắt đầu lịch cho phim mới (yyyy-mm-dd)"
+        required: false
+        default: "2026-08-04"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cài ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Dựng phim
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          LARK_APP_ID: ${{ vars.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_BASE_ID: ${{ vars.LARK_BASE_ID }}
+          LARK_DOMAIN: ${{ vars.LARK_DOMAIN }}
+          ONLY: ${{ github.event.inputs.only }}
+          FILM_START: ${{ github.event.inputs.film_start }}
+        run: node ".claude/skills/hmh-AIOS-dang-video-youtube/scripts/make-films.mjs"
